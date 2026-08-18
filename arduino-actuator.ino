@@ -1,0 +1,165 @@
+// Плата ардуино, которая получает данные с 
+// Датчик температуры KY-001
+// Датчик Холла KY-024
+// Датчик Геркона KY-025
+
+#include "AustereSerialMaster.h"
+#include "./Led.h"
+#include "./KY-001.h"
+#include "./KY-024.h"
+#include "./KY-025.h"
+#include "./Wind.h"
+
+#define KY024_DO_PIN 12 
+
+#define KY025_AO_PIN A0
+
+// Pick any digital pins per spec.
+static const uint8_t PIN_MISO = 3;
+static const uint8_t PIN_MOSI = 4;
+static const uint8_t PIN_CLK  = 5;
+static const uint8_t PIN_CS   = 6;
+static const uint8_t PIN_IRQ  = 7;
+
+AustereSerialMaster link(PIN_MISO, PIN_MOSI, PIN_CLK, PIN_CS, PIN_IRQ);
+
+static const uint8_t POLLING_CODE = 1;
+static const uint8_t ACTUATOR_CODE = 2;
+static const uint8_t OK_CODE = 3;
+static const uint8_t SEND_CODE = 4;
+static const uint8_t TEMPERATURE_WHOLE_CODE = 6;
+static const uint8_t TEMPERATURE_FLOAT_CODE = 7;
+static const uint8_t ETALON_CODE = 8;
+
+static const uint8_t FAN_RELAY_PIN = 8;
+static const uint8_t FAN_PWM_PIN = 9;
+static const uint8_t FAN_TACH_PIN = 2;
+
+static const LED led = LED(10);
+Wind fan(FAN_RELAY_PIN, FAN_PWM_PIN, FAN_TACH_PIN);
+float temperature = 0;
+float etalon_temperature = 0;
+uint16_t fan_rpm = 0;
+
+// Format: [int8_t whole part][uint8_t fraction normalized to 0..255].
+// The fraction represents hundredths of a degree (0..99).
+float temperatureFromBytes(uint8_t wholeByte, uint8_t fractionByte) {
+  const int8_t wholePart = (int8_t)wholeByte;
+  const float hundredths = (float)fractionByte * 99.0f / 255.0f;
+  return (float)wholePart + hundredths / 100.0f;
+}
+
+void updateFanSpeed() {
+  const float difference = temperature - etalon_temperature;
+  if (difference <= 1) {
+    Serial.println("DROP!!!");
+    fan.set_speed(0);
+    return;
+  }
+
+  // Линейная характеристика: +5 °C относительно эталона = 100% PWM.
+  const uint8_t speed = (uint8_t)constrain(lroundf(difference * 51.0f), 0, 255);
+  Serial.println(speed);
+  fan.set_speed(speed);
+}
+
+void sendTemperature(float value) {
+  value = constrain(value, -128.0f, 127.99f);
+
+  // floorf preserves the sign for values between -1.00 and 0.00.
+  int8_t wholePart = (int8_t)floorf(value);
+  uint8_t hundredths = (uint8_t)lroundf((value - wholePart) * 100.0f);
+
+  // For example, 23.999 becomes 24.00 after rounding to hundredths.
+  if (hundredths == 100) {
+    wholePart++;
+    hundredths = 0;
+  }
+
+  const uint8_t normalizedFraction =
+      (uint8_t)lroundf((float)hundredths * 255.0f / 99.0f);
+
+  link.sendByte((uint8_t)wholePart);
+  link.sendByte(normalizedFraction);
+}
+
+void setup() {
+  Serial.begin(9600);
+  link.setup();
+  Serial.println("AustereSerialMaster ready");
+  setup_gerkon(KY025_AO_PIN);
+  setup_hall(KY024_DO_PIN);
+  fan.begin();
+  fan.set_speed(0);
+  Serial.println("Actuator ready");
+}
+
+void do_numbers() {
+  // // Example TX once per second.
+  // static uint32_t lastTxMs = 0;
+  // static uint8_t counter = 0;
+  // const uint32_t now = millis();
+  // if (now - lastTxMs >= 1000) {
+  //   lastTxMs = now;
+  //   link.sendByte(counter++);
+
+  // Drain received bytes.
+  enum ReceiveState {
+    WAIT_CODE,
+    WAIT_TEMPERATURE_WHOLE,
+    WAIT_TEMPERATURE_FLOAT_CODE,
+    WAIT_TEMPERATURE_FRACTION,
+    WAIT_ETALON
+  };
+  static ReceiveState receiveState = WAIT_CODE;
+  static uint8_t receivedWholeByte = 0;
+  uint8_t b;
+  while (link.recvByte(&b)) {
+    switch (receiveState) {
+      case WAIT_CODE:
+        if (b == ACTUATOR_CODE) {
+          // зажечь светодиод
+          led.toggle();
+          link.sendByte(OK_CODE);
+        } else if (b == TEMPERATURE_WHOLE_CODE) {
+          receiveState = WAIT_TEMPERATURE_WHOLE;
+        } else if (b == ETALON_CODE) {
+          receiveState = WAIT_ETALON;
+        }
+        break;
+      case WAIT_TEMPERATURE_WHOLE:
+        receivedWholeByte = b;
+        receiveState = WAIT_TEMPERATURE_FLOAT_CODE;
+        break;
+      case WAIT_TEMPERATURE_FLOAT_CODE:
+        if (b == TEMPERATURE_FLOAT_CODE) {
+          receiveState = WAIT_TEMPERATURE_FRACTION;
+        } else {
+          // Пакет повреждён или неполон: синхронизируемся по следующему коду.
+          receiveState = (b == TEMPERATURE_WHOLE_CODE)
+              ? WAIT_TEMPERATURE_WHOLE
+              : WAIT_CODE;
+        }
+        break;
+      case WAIT_TEMPERATURE_FRACTION:
+        temperature = temperatureFromBytes(receivedWholeByte, b);
+        Serial.println(temperature);
+        receiveState = WAIT_CODE;
+        link.sendByte(OK_CODE);
+        updateFanSpeed();
+        break;
+      case WAIT_ETALON:
+        etalon_temperature = (float)(int8_t)b;
+        Serial.println(etalon_temperature);
+        receiveState = WAIT_CODE;
+        updateFanSpeed();
+        break;
+    }
+  }
+}
+
+// 0d 46 46 fe 0a 0d
+
+void loop() {
+  do_numbers();
+}
