@@ -23,6 +23,7 @@ static const uint8_t SEND_CODE = 4;
 static const uint8_t TEMPERATURE_WHOLE_CODE = 6;
 static const uint8_t TEMPERATURE_FLOAT_CODE = 7;
 static const uint8_t ETALON_CODE = 8;
+static const uint16_t MAX_FAN_RPM = 4500;
 
 static const LED led = LED(A3);
 FansManager fans;
@@ -48,7 +49,6 @@ void updateFanSpeed() {
 
   // Линейная характеристика: +5 °C относительно эталона = 100% PWM.
   const uint8_t speed = (uint8_t)constrain(lroundf(difference * 51.0f), 0, 150);
-  Serial.println(speed);
   fans.set_speed(speed);
 }
 
@@ -93,6 +93,37 @@ void updateAndPrintFanRpm() {
   }
 }
 
+// Передаёт RPM как два нормированных байта: 0x0000 = 0 RPM,
+// 0xFFFF = MAX_FAN_RPM. Старший байт отправляется первым.
+void sendCompressedRpm(uint16_t rpm) {
+  rpm = constrain(rpm, 0, MAX_FAN_RPM);
+  const uint16_t normalized = (uint16_t)(((unsigned long)rpm * 65535UL +
+                                          MAX_FAN_RPM / 2) /
+                                         MAX_FAN_RPM);
+  uint8_t highByte = normalized >> 8;
+  uint8_t lowByte = normalized & 0xFF;
+  if (highByte == 3 || lowByte == 3) {
+    Serial.println("УПРАВЛЯЮЩИЙ КОД");
+    if (highByte == 3) {
+      highByte = 255;
+    }
+    if (lowByte == 3) {
+      lowByte = 255;
+    }
+  }
+  // link.sendByte(normalized >> 8);
+  // link.sendByte(normalized & 0xFF);
+  // Serial.println(">> 8");
+  // Serial.println(normalized >> 8);
+  // if (normalized >> 8 > 255 || normalized & 0xFF > 255) {
+  //   Serial.println("SDADASDASDAS");
+  // }
+  // Serial.println(">> FF");
+  // Serial.println(normalized & 0xFF);
+  link.sendByte(highByte);
+  link.sendByte(lowByte);
+}
+
 void setup() {
   Serial.begin(9600);
   link.setup();
@@ -128,6 +159,12 @@ void loop() {
           // зажечь светодиод
           led.toggle();
           link.sendByte(OK_CODE);
+          updateFanSpeed();
+        } else if (b == POLLING_CODE) {
+          for (uint8_t i = 0; i < fans.fans_count; ++i) {
+            sendCompressedRpm(fans.get_rpm(i));
+          }
+          link.sendByte(OK_CODE);
         } else if (b == TEMPERATURE_WHOLE_CODE) {
           receiveState = WAIT_TEMPERATURE_WHOLE;
         } else if (b == ETALON_CODE) {
@@ -157,7 +194,6 @@ void loop() {
         break;
       case WAIT_ETALON:
         etalon_temperature = (float)(int8_t)b;
-        Serial.println(etalon_temperature);
         receiveState = WAIT_CODE;
         updateFanSpeed();
         break;
