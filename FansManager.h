@@ -5,13 +5,13 @@
 
 class FansManager {
  public:
-  static const uint8_t fans_count = 3;
+  static const uint8_t fans_count = 4;
 
   void setup() {
     instance_ = this;
 
-    pinMode(relay_pin_, OUTPUT);
     for (uint8_t i = 0; i < fans_count; ++i) {
+      pinMode(relay_pins_[i], OUTPUT);
       pinMode(pwm_pins_[i], OUTPUT);
       pinMode(tach_pins_[i], INPUT_PULLUP);
     }
@@ -19,6 +19,7 @@ class FansManager {
     attachPCINT(digitalPinToPCINT(tach_pins_[0]), countFan0, FALLING);
     attachPCINT(digitalPinToPCINT(tach_pins_[1]), countFan1, FALLING);
     attachPCINT(digitalPinToPCINT(tach_pins_[2]), countFan2, FALLING);
+    attachPCINT(digitalPinToPCINT(tach_pins_[3]), countFan3, FALLING);
 
     last_measurement_ms_ = millis();
     set_speed(0);
@@ -27,8 +28,8 @@ class FansManager {
   // Устанавливает одинаковую PWM-скорость всем кулерам.
   void set_speed(uint8_t speed) {
     // Реле активно по LOW. При нулевой скорости питание кулеров отключено.
-    digitalWrite(relay_pin_, speed == 0 ? HIGH : LOW);
     for (uint8_t i = 0; i < fans_count; ++i) {
+      digitalWrite(relay_pins_[i], speed == 0 ? HIGH : LOW);
       analogWrite(pwm_pins_[i], speed);
     }
   }
@@ -40,12 +41,11 @@ class FansManager {
   }
 
  private:
-  static const uint8_t relay_pin_ = 8;
   static const uint8_t pulses_per_revolution_ = 2;
   static const uint16_t measurement_interval_ms_ = 1000;
   static const uint8_t pwm_pins_[fans_count];
   static const uint8_t tach_pins_[fans_count];
-
+  static const uint8_t relay_pins_[fans_count];
   void update_rpm() {
     const unsigned long now = millis();
     const unsigned long elapsed = now - last_measurement_ms_;
@@ -71,6 +71,7 @@ class FansManager {
   static void countFan0() { increment(0); }
   static void countFan1() { increment(1); }
   static void countFan2() { increment(2); }
+  static void countFan3() { increment(3); }
 
   static void increment(uint8_t idx) {
     if (instance_ != nullptr) {
@@ -78,13 +79,14 @@ class FansManager {
     }
   }
 
-  volatile unsigned long pulse_count_[fans_count] = {0, 0, 0};
-  uint16_t rpm_[fans_count] = {0, 0, 0};
+  volatile unsigned long pulse_count_[fans_count] = {0, 0, 0, 0};
+  uint16_t rpm_[fans_count] = {0, 0, 0, 0};
   unsigned long last_measurement_ms_ = 0;
 
   static FansManager* instance_;
 };
 
-const uint8_t FansManager::pwm_pins_[FansManager::fans_count] = {9, 11, 2};
-const uint8_t FansManager::tach_pins_[FansManager::fans_count] = {10, 12, 13};
+const uint8_t FansManager::pwm_pins_[FansManager::fans_count] = {9, 11, 2, A3};
+const uint8_t FansManager::tach_pins_[FansManager::fans_count] = {10, 12, 13, A4};
+const uint8_t FansManager::relay_pins_[FansManager::fans_count] = {8, A0, A1, A2};
 FansManager* FansManager::instance_ = nullptr;
