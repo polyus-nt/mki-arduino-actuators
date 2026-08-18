@@ -5,14 +5,7 @@
 
 #include "AustereSerialMaster.h"
 #include "./Led.h"
-#include "./KY-001.h"
-#include "./KY-024.h"
-#include "./KY-025.h"
-#include "./Wind.h"
-
-#define KY024_DO_PIN 12 
-
-#define KY025_AO_PIN A0
+#include "./FansManager.h"
 
 // Pick any digital pins per spec.
 static const uint8_t PIN_MISO = 3;
@@ -31,12 +24,8 @@ static const uint8_t TEMPERATURE_WHOLE_CODE = 6;
 static const uint8_t TEMPERATURE_FLOAT_CODE = 7;
 static const uint8_t ETALON_CODE = 8;
 
-static const uint8_t FAN_RELAY_PIN = 8;
-static const uint8_t FAN_PWM_PIN = 9;
-static const uint8_t FAN_TACH_PIN = 2;
-
-static const LED led = LED(10);
-Wind fan(FAN_RELAY_PIN, FAN_PWM_PIN, FAN_TACH_PIN);
+static const LED led = LED(A3);
+FansManager fans;
 float temperature = 0;
 float etalon_temperature = 0;
 uint16_t fan_rpm = 0;
@@ -53,14 +42,14 @@ void updateFanSpeed() {
   const float difference = temperature - etalon_temperature;
   if (difference <= 1) {
     Serial.println("DROP!!!");
-    fan.set_speed(0);
+    fans.set_speed(0);
     return;
   }
 
   // Линейная характеристика: +5 °C относительно эталона = 100% PWM.
-  const uint8_t speed = (uint8_t)constrain(lroundf(difference * 51.0f), 0, 255);
+  const uint8_t speed = (uint8_t)constrain(lroundf(difference * 51.0f), 0, 150);
   Serial.println(speed);
-  fan.set_speed(speed);
+  fans.set_speed(speed);
 }
 
 void sendTemperature(float value) {
@@ -83,18 +72,36 @@ void sendTemperature(float value) {
   link.sendByte(normalizedFraction);
 }
 
+void updateAndPrintFanRpm() {
+  static unsigned long lastReportMs = 0;
+  const unsigned long now = millis();
+  if (now - lastReportMs < 1000) {
+    return;
+  }
+  lastReportMs = now;
+
+  for (uint8_t i = 0; i < fans.fans_count; ++i) {
+    const uint16_t rpm = fans.get_rpm(i);
+    if (i == 0) {
+      fan_rpm = rpm;
+    }
+    Serial.print("Fan ");
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.print(rpm);
+    Serial.println(" RPM");
+  }
+}
+
 void setup() {
   Serial.begin(9600);
   link.setup();
   Serial.println("AustereSerialMaster ready");
-  setup_gerkon(KY025_AO_PIN);
-  setup_hall(KY024_DO_PIN);
-  fan.begin();
-  fan.set_speed(0);
+  fans.setup();
   Serial.println("Actuator ready");
 }
 
-void do_numbers() {
+void loop() {
   // // Example TX once per second.
   // static uint32_t lastTxMs = 0;
   // static uint8_t counter = 0;
@@ -156,10 +163,6 @@ void do_numbers() {
         break;
     }
   }
-}
 
-// 0d 46 46 fe 0a 0d
-
-void loop() {
-  do_numbers();
+  updateAndPrintFanRpm();
 }
