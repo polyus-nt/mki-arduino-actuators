@@ -8,11 +8,11 @@
 #include "./FansManager.h"
 
 // Pick any digital pins per spec.
-static const uint8_t PIN_MISO = 3;
-static const uint8_t PIN_MOSI = 4;
-static const uint8_t PIN_CLK  = 5;
-static const uint8_t PIN_CS   = 6;
-static const uint8_t PIN_IRQ  = 7;
+static const uint8_t PIN_MISO = 2;
+static const uint8_t PIN_MOSI = 3;
+static const uint8_t PIN_CLK  = 4;
+static const uint8_t PIN_CS   = 5;
+static const uint8_t PIN_IRQ  = 6;
 
 AustereSerialMaster link(PIN_MISO, PIN_MOSI, PIN_CLK, PIN_CS, PIN_IRQ);
 
@@ -23,9 +23,12 @@ static const uint8_t SEND_CODE = 4;
 static const uint8_t TEMPERATURE_WHOLE_CODE = 6;
 static const uint8_t TEMPERATURE_FLOAT_CODE = 7;
 static const uint8_t ETALON_CODE = 8;
-static const uint16_t MAX_FAN_RPM = 4500;
+static const uint16_t MAX_FAN_RPM = 5000;
+static const bool DEBUG = false;
+static const uint8_t FAN_TEST_PWM = 150;
+static const unsigned long FAN_TEST_REPORT_INTERVAL_MS = 5000;
 
-static const LED led = LED(A3);
+// static const LED led = LED(A3);
 FansManager fans;
 float temperature = 0;
 float etalon_temperature = 0;
@@ -93,6 +96,30 @@ void updateAndPrintFanRpm() {
   }
 }
 
+// Включает все кулеры и раз в 5 секунд выводит их обороты.
+void testFanAvailability() {
+  static bool testStarted = false;
+  static unsigned long lastReportMs = 0;
+  const unsigned long now = millis();
+
+  if (!testStarted) {
+    Serial.println("Fan test started");
+    testStarted = true;
+  }
+  fans.set_speed(50);
+  lastReportMs = now;
+
+  for (uint8_t i = 0; i < fans.fans_count; ++i) {
+    Serial.print("Fan ");
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.print(fans.get_rpm(i));
+    Serial.println(" RPM");
+  }
+
+  delay(1000);
+}
+
 // Передаёт RPM как два нормированных байта: 0x0000 = 0 RPM,
 // 0xFFFF = MAX_FAN_RPM. Старший байт отправляется первым.
 void sendCompressedRpm(uint16_t rpm) {
@@ -132,16 +159,13 @@ void setup() {
   Serial.println("Actuator ready");
 }
 
-void loop() {
+void doUsefulWork() {
   // // Example TX once per second.
   // static uint32_t lastTxMs = 0;
   // static uint8_t counter = 0;
   // const uint32_t now = millis();
   // if (now - lastTxMs >= 1000) {
   //   lastTxMs = now;
-  //   link.sendByte(counter++);
-
-  // Drain received bytes.
   enum ReceiveState {
     WAIT_CODE,
     WAIT_TEMPERATURE_WHOLE,
@@ -157,7 +181,7 @@ void loop() {
       case WAIT_CODE:
         if (b == ACTUATOR_CODE) {
           // зажечь светодиод
-          led.toggle();
+          // led.toggle();
           link.sendByte(OK_CODE);
           updateFanSpeed();
         } else if (b == POLLING_CODE) {
@@ -201,4 +225,12 @@ void loop() {
   }
 
   updateAndPrintFanRpm();
+}
+
+void loop() {
+  if (DEBUG) {
+    testFanAvailability();
+  } else {
+    doUsefulWork();
+  }
 }

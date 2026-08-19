@@ -34,6 +34,17 @@ class FansManager {
     }
   }
 
+  // Устанавливает PWM-скорость одному кулеру. Нужен, в частности, для
+  // поочерёдной проверки тахометрических сигналов.
+  void set_speed(uint8_t idx, uint8_t speed) {
+    if (idx >= fans_count) {
+      return;
+    }
+
+    digitalWrite(relay_pins_[idx], speed == 0 ? HIGH : LOW);
+    analogWrite(pwm_pins_[idx], speed);
+  }
+
   // Возвращает последние измеренные обороты кулера с индексом idx (0..2).
   uint16_t get_rpm(uint8_t idx) {
     update_rpm();
@@ -86,7 +97,10 @@ class FansManager {
   static FansManager* instance_;
 };
 
-const uint8_t FansManager::pwm_pins_[FansManager::fans_count] = {9, 11, 2, A3};
-const uint8_t FansManager::tach_pins_[FansManager::fans_count] = {10, 12, 13, A4};
-const uint8_t FansManager::relay_pins_[FansManager::fans_count] = {8, A0, A1, A2};
+// const uint8_t FansManager::pwm_pins_[FansManager::fans_count] = {9, 11, 8, A5};
+// const uint8_t FansManager::tach_pins_[FansManager::fans_count] = {10, 12, 13, 8};
+// const uint8_t FansManager::relay_pins_[FansManager::fans_count] = {A0, A1, A2, A3};
+const uint8_t FansManager::pwm_pins_[FansManager::fans_count] = {13, 12, 7, A5};
+const uint8_t FansManager::tach_pins_[FansManager::fans_count] = {11, 10, 9, 8};
+const uint8_t FansManager::relay_pins_[FansManager::fans_count] = {A0, A1, A2, A3};
 FansManager* FansManager::instance_ = nullptr;
