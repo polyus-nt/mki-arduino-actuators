@@ -12,7 +12,7 @@ static const uint8_t PIN_MISO = 2;
 static const uint8_t PIN_MOSI = 3;
 static const uint8_t PIN_CLK  = 4;
 static const uint8_t PIN_CS   = 5;
-static const uint8_t PIN_IRQ  = 6;
+static const uint8_t PIN_IRQ  = 7;
 
 AustereSerialMaster link(PIN_MISO, PIN_MOSI, PIN_CLK, PIN_CS, PIN_IRQ);
 
@@ -24,6 +24,8 @@ static const uint8_t TEMPERATURE_WHOLE_CODE = 6;
 static const uint8_t TEMPERATURE_FLOAT_CODE = 7;
 static const uint8_t ETALON_CODE = 8;
 static const uint16_t MAX_FAN_RPM = 5000;
+static const uint8_t MAX_FAN_PWM = 150;
+static const float FAN_FULL_SPEED_DIFFERENCE_C = 5.0f;
 static const bool DEBUG = false;
 static const uint8_t FAN_TEST_PWM = 150;
 static const unsigned long FAN_TEST_REPORT_INTERVAL_MS = 5000;
@@ -44,14 +46,14 @@ float temperatureFromBytes(uint8_t wholeByte, uint8_t fractionByte) {
 
 void updateFanSpeed() {
   const float difference = temperature - etalon_temperature;
-  if (difference <= 1) {
-    Serial.println("DROP!!!");
+  // +5 °C относительно эталона = 100% разрешённой скорости (PWM 150).
+  if (difference < 0) {
     fans.set_speed(0);
     return;
   }
-
-  // Линейная характеристика: +5 °C относительно эталона = 100% PWM.
-  const uint8_t speed = (uint8_t)constrain(lroundf(difference * 51.0f), 0, 150);
+  const uint8_t speed = (uint8_t)constrain(
+      lroundf(difference * MAX_FAN_PWM / FAN_FULL_SPEED_DIFFERENCE_C),
+      0, MAX_FAN_PWM);
   fans.set_speed(speed);
 }
 
@@ -88,11 +90,11 @@ void updateAndPrintFanRpm() {
     if (i == 0) {
       fan_rpm = rpm;
     }
-    Serial.print("Fan ");
-    Serial.print(i + 1);
-    Serial.print(": ");
-    Serial.print(rpm);
-    Serial.println(" RPM");
+    // Serial.print("Fan ");
+    // Serial.print(i + 1);
+    // Serial.print(": ");
+    // Serial.print(rpm);
+    // Serial.println(" RPM");
   }
 }
 

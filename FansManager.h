@@ -100,7 +100,7 @@ class FansManager {
 // const uint8_t FansManager::pwm_pins_[FansManager::fans_count] = {9, 11, 8, A5};
 // const uint8_t FansManager::tach_pins_[FansManager::fans_count] = {10, 12, 13, 8};
 // const uint8_t FansManager::relay_pins_[FansManager::fans_count] = {A0, A1, A2, A3};
-const uint8_t FansManager::pwm_pins_[FansManager::fans_count] = {13, 12, 7, A5};
-const uint8_t FansManager::tach_pins_[FansManager::fans_count] = {11, 10, 9, 8};
+const uint8_t FansManager::pwm_pins_[FansManager::fans_count] = {10, 11, 6, 9};
+const uint8_t FansManager::tach_pins_[FansManager::fans_count] = {12, 13, A4, 8};
 const uint8_t FansManager::relay_pins_[FansManager::fans_count] = {A0, A1, A2, A3};
 FansManager* FansManager::instance_ = nullptr;
