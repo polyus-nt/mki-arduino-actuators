@@ -1,238 +1,193 @@
-// Плата ардуино, которая получает данные с 
-// Датчик температуры KY-001
-// Датчик Холла KY-024
-// Датчик Геркона KY-025
-
 #include "AustereSerialMaster.h"
-#include "./Led.h"
-#include "./FansManager.h"
+#include <EEPROM.h>
 
-// Pick any digital pins per spec.
+#include "./FansManager.h"
+#include "control/ControlCore.h"
+#include "control/PersistentConfig.h"
+
 static const uint8_t PIN_MISO = 2;
 static const uint8_t PIN_MOSI = 3;
-static const uint8_t PIN_CLK  = 4;
-static const uint8_t PIN_CS   = 5;
-static const uint8_t PIN_IRQ  = 7;
+static const uint8_t PIN_CLK = 4;
+static const uint8_t PIN_CS = 5;
+static const uint8_t PIN_IRQ = 7;
 
 AustereSerialMaster link(PIN_MISO, PIN_MOSI, PIN_CLK, PIN_CS, PIN_IRQ);
-
-static const uint8_t POLLING_CODE = 1;
-static const uint8_t ACTUATOR_CODE = 2;
-static const uint8_t OK_CODE = 3;
-static const uint8_t SEND_CODE = 4;
-static const uint8_t TEMPERATURE_WHOLE_CODE = 6;
-static const uint8_t TEMPERATURE_FLOAT_CODE = 7;
-static const uint8_t ETALON_CODE = 8;
-static const uint16_t MAX_FAN_RPM = 5000;
-static const uint8_t MAX_FAN_PWM = 150;
-static const float FAN_FULL_SPEED_DIFFERENCE_C = 5.0f;
-static const bool DEBUG = false;
-static const uint8_t FAN_TEST_PWM = 150;
-static const unsigned long FAN_TEST_REPORT_INTERVAL_MS = 5000;
-
-// static const LED led = LED(A3);
 FansManager fans;
-float temperature = 0;
-float etalon_temperature = 0;
-uint16_t fan_rpm = 0;
+cooling::ControlCore control;
 
-// Format: [int8_t whole part][uint8_t fraction normalized to 0..255].
-// The fraction represents hundredths of a degree (0..99).
-float temperatureFromBytes(uint8_t wholeByte, uint8_t fractionByte) {
-  const int8_t wholePart = (int8_t)wholeByte;
-  const float hundredths = (float)fractionByte * 99.0f / 255.0f;
-  return (float)wholePart + hundredths / 100.0f;
+static const uint8_t GET_ACTUATOR_STATE = 0x01;
+static const uint8_t OK_CODE = 0x03;
+static const uint8_t UPDATE_ENVIRONMENT = 0x06;
+static const uint8_t SET_TARGET = 0x08;
+static const uint8_t PROPOSE_PID = 0x09;
+static const uint8_t PROPOSE_WEIGHTS = 0x0A;
+static const uint8_t CONFIRM_CONFIG = 0x0B;
+static const uint8_t ROLLBACK_CONFIG = 0x0C;
+static const uint8_t SET_DOOR_POLICY = 0x0D;
+static const uint8_t PROBE_FAN = 0x0E;
+static const uint8_t CLEAR_EMERGENCY = 0x0F;
+static const uint8_t GET_CONTROL_CONFIG = 0x10;
+static const uint8_t MAX_PAYLOAD = 8;
+static_assert(cooling::kPersistedConfigSize <= E2END + 1,
+              "stable configuration must fit Arduino Uno EEPROM");
+
+uint16_t readU16(const uint8_t* p) {
+  return (static_cast<uint16_t>(p[0]) << 8) | p[1];
 }
 
-void updateFanSpeed() {
-  const float difference = temperature - etalon_temperature;
-  // +5 °C относительно эталона = 100% разрешённой скорости (PWM 150).
-  if (difference < 0) {
-    fans.set_speed(0);
-    return;
-  }
-  const uint8_t speed = (uint8_t)constrain(
-      lroundf(difference * MAX_FAN_PWM / FAN_FULL_SPEED_DIFFERENCE_C),
-      0, MAX_FAN_PWM);
-  fans.set_speed(speed);
+void sendU16(uint16_t value) {
+  link.sendByte(static_cast<uint8_t>(value >> 8));
+  link.sendByte(static_cast<uint8_t>(value));
 }
 
-void sendTemperature(float value) {
-  value = constrain(value, -128.0f, 127.99f);
-
-  // floorf preserves the sign for values between -1.00 and 0.00.
-  int8_t wholePart = (int8_t)floorf(value);
-  uint8_t hundredths = (uint8_t)lroundf((value - wholePart) * 100.0f);
-
-  // For example, 23.999 becomes 24.00 after rounding to hundredths.
-  if (hundredths == 100) {
-    wholePart++;
-    hundredths = 0;
-  }
-
-  const uint8_t normalizedFraction =
-      (uint8_t)lroundf((float)hundredths * 255.0f / 99.0f);
-
-  link.sendByte((uint8_t)wholePart);
-  link.sendByte(normalizedFraction);
+uint16_t encodeCoefficient(float value) {
+  if (value <= 0.0f) return 0;
+  if (value >= 65.535f) return 65535;
+  return static_cast<uint16_t>(lroundf(value * 1000.0f));
 }
 
-void updateAndPrintFanRpm() {
-  static unsigned long lastReportMs = 0;
-  const unsigned long now = millis();
-  if (now - lastReportMs < 1000) {
-    return;
-  }
-  lastReportMs = now;
+void saveStableConfig() {
+  uint8_t stored[cooling::kPersistedConfigSize];
+  if (cooling::encodePersistedConfig(control.stableConfig(), stored))
+    EEPROM.put(0, stored);
+}
 
-  for (uint8_t i = 0; i < fans.fans_count; ++i) {
-    const uint16_t rpm = fans.get_rpm(i);
-    if (i == 0) {
-      fan_rpm = rpm;
+void loadStableConfig() {
+  uint8_t stored[cooling::kPersistedConfigSize];
+  EEPROM.get(0, stored);
+  cooling::ControlConfig config = control.stableConfig();
+  if (cooling::decodePersistedConfig(stored, &config)) control.loadStableConfig(config);
+}
+
+uint8_t payloadLength(uint8_t command) {
+  switch (command) {
+    case GET_ACTUATOR_STATE:
+    case CLEAR_EMERGENCY:
+    case GET_CONTROL_CONFIG: return 0;
+    case SET_TARGET:
+    case PROBE_FAN: return 1;
+    case SET_DOOR_POLICY:
+    case CONFIRM_CONFIG:
+    case ROLLBACK_CONFIG: return command == SET_DOOR_POLICY ? 4 : 2;
+    case UPDATE_ENVIRONMENT: return 5;
+    case PROPOSE_WEIGHTS: return 6;
+    case PROPOSE_PID: return 8;
+    default: return 0xFF;
+  }
+}
+
+void sendActuatorState() {
+  const cooling::Snapshot& s = control.snapshot();
+  link.sendByte(s.targetC);
+  link.sendByte(static_cast<uint8_t>(s.mode));
+  link.sendByte(static_cast<uint8_t>(s.doorPolicy));
+  sendU16(s.stableVersion);
+  sendU16(s.candidateVersion);
+  for (uint8_t i = 0; i < cooling::kFanCount; ++i) link.sendByte(s.pwm[i]);
+  for (uint8_t i = 0; i < cooling::kFanCount; ++i) sendU16(s.rpm[i]);
+  link.sendByte(s.failedMask);
+  link.sendByte(OK_CODE);
+}
+
+void sendControlConfig() {
+  const cooling::ControlConfig& config = control.activeConfig();
+  const cooling::Snapshot& s = control.snapshot();
+  sendU16(s.stableVersion);
+  sendU16(s.candidateVersion);
+  sendU16(encodeCoefficient(config.pid.kp));
+  sendU16(encodeCoefficient(config.pid.ki));
+  sendU16(encodeCoefficient(config.pid.kd));
+  for (uint8_t i = 0; i < cooling::kFanCount; ++i) link.sendByte(config.weights[i]);
+  link.sendByte(static_cast<uint8_t>(config.doorPolicy));
+  link.sendByte(config.limitedPwm);
+  link.sendByte(s.targetC);
+  link.sendByte(OK_CODE);
+}
+
+void processCommand(uint8_t command, const uint8_t* payload, uint32_t nowMs) {
+  cooling::Result result = cooling::INVALID_ARGUMENT;
+  switch (command) {
+    case GET_ACTUATOR_STATE: sendActuatorState(); return;
+    case GET_CONTROL_CONFIG: sendControlConfig(); return;
+    case UPDATE_ENVIRONMENT: {
+      const int8_t whole = static_cast<int8_t>(payload[0]);
+      const float fraction = roundf(payload[1] * 99.0f / 255.0f) / 100.0f;
+      control.updateEnvironment(whole + fraction, (payload[2] & 0x01) != 0,
+          (payload[2] & 0x02) != 0, payload[3] != 0, payload[4], nowMs);
+      result = cooling::RESULT_OK;
+      break;
     }
-    // Serial.print("Fan ");
-    // Serial.print(i + 1);
-    // Serial.print(": ");
-    // Serial.print(rpm);
-    // Serial.println(" RPM");
-  }
-}
-
-// Включает все кулеры и раз в 5 секунд выводит их обороты.
-void testFanAvailability() {
-  static bool testStarted = false;
-  static unsigned long lastReportMs = 0;
-  const unsigned long now = millis();
-
-  if (!testStarted) {
-    Serial.println("Fan test started");
-    testStarted = true;
-  }
-  fans.set_speed(50);
-  lastReportMs = now;
-
-  for (uint8_t i = 0; i < fans.fans_count; ++i) {
-    Serial.print("Fan ");
-    Serial.print(i + 1);
-    Serial.print(": ");
-    Serial.print(fans.get_rpm(i));
-    Serial.println(" RPM");
-  }
-
-  delay(1000);
-}
-
-// Передаёт RPM как два нормированных байта: 0x0000 = 0 RPM,
-// 0xFFFF = MAX_FAN_RPM. Старший байт отправляется первым.
-void sendCompressedRpm(uint16_t rpm) {
-  rpm = constrain(rpm, 0, MAX_FAN_RPM);
-  const uint16_t normalized = (uint16_t)(((unsigned long)rpm * 65535UL +
-                                          MAX_FAN_RPM / 2) /
-                                         MAX_FAN_RPM);
-  uint8_t highByte = normalized >> 8;
-  uint8_t lowByte = normalized & 0xFF;
-  if (highByte == 3 || lowByte == 3) {
-    Serial.println("УПРАВЛЯЮЩИЙ КОД");
-    if (highByte == 3) {
-      highByte = 255;
+    case SET_TARGET: result = control.setTarget(payload[0]); break;
+    case PROPOSE_PID: {
+      cooling::PidConfig pid = control.stableConfig().pid;
+      pid.kp = readU16(payload + 2) / 1000.0f;
+      pid.ki = readU16(payload + 4) / 1000.0f;
+      pid.kd = readU16(payload + 6) / 1000.0f;
+      result = control.proposePid(readU16(payload), pid, nowMs);
+      break;
     }
-    if (lowByte == 3) {
-      lowByte = 255;
-    }
+    case PROPOSE_WEIGHTS:
+      result = control.proposeWeights(readU16(payload), payload + 2, nowMs);
+      break;
+    case CONFIRM_CONFIG: result = control.confirmConfig(readU16(payload)); break;
+    case ROLLBACK_CONFIG: result = control.rollbackConfig(readU16(payload)); break;
+    case SET_DOOR_POLICY:
+      result = control.setDoorPolicy(readU16(payload),
+          static_cast<cooling::DoorPolicy>(payload[2]), payload[3]);
+      break;
+    case PROBE_FAN: result = control.probeFan(payload[0], nowMs); break;
+    case CLEAR_EMERGENCY:
+      control.clearEmergency();
+      result = cooling::RESULT_OK;
+      break;
   }
-  // link.sendByte(normalized >> 8);
-  // link.sendByte(normalized & 0xFF);
-  // Serial.println(">> 8");
-  // Serial.println(normalized >> 8);
-  // if (normalized >> 8 > 255 || normalized & 0xFF > 255) {
-  //   Serial.println("SDADASDASDAS");
-  // }
-  // Serial.println(">> FF");
-  // Serial.println(normalized & 0xFF);
-  link.sendByte(highByte);
-  link.sendByte(lowByte);
+  link.sendByte(static_cast<uint8_t>(result));
 }
 
 void setup() {
   Serial.begin(9600);
   link.setup();
-  Serial.println("AustereSerialMaster ready");
   fans.setup();
-  Serial.println("Actuator ready");
-}
-
-void doUsefulWork() {
-  // // Example TX once per second.
-  // static uint32_t lastTxMs = 0;
-  // static uint8_t counter = 0;
-  // const uint32_t now = millis();
-  // if (now - lastTxMs >= 1000) {
-  //   lastTxMs = now;
-  enum ReceiveState {
-    WAIT_CODE,
-    WAIT_TEMPERATURE_WHOLE,
-    WAIT_TEMPERATURE_FLOAT_CODE,
-    WAIT_TEMPERATURE_FRACTION,
-    WAIT_ETALON
-  };
-  static ReceiveState receiveState = WAIT_CODE;
-  static uint8_t receivedWholeByte = 0;
-  uint8_t b;
-  while (link.recvByte(&b)) {
-    switch (receiveState) {
-      case WAIT_CODE:
-        if (b == ACTUATOR_CODE) {
-          // зажечь светодиод
-          // led.toggle();
-          link.sendByte(OK_CODE);
-          updateFanSpeed();
-        } else if (b == POLLING_CODE) {
-          for (uint8_t i = 0; i < fans.fans_count; ++i) {
-            sendCompressedRpm(fans.get_rpm(i));
-          }
-          link.sendByte(OK_CODE);
-        } else if (b == TEMPERATURE_WHOLE_CODE) {
-          receiveState = WAIT_TEMPERATURE_WHOLE;
-        } else if (b == ETALON_CODE) {
-          receiveState = WAIT_ETALON;
-        }
-        break;
-      case WAIT_TEMPERATURE_WHOLE:
-        receivedWholeByte = b;
-        receiveState = WAIT_TEMPERATURE_FLOAT_CODE;
-        break;
-      case WAIT_TEMPERATURE_FLOAT_CODE:
-        if (b == TEMPERATURE_FLOAT_CODE) {
-          receiveState = WAIT_TEMPERATURE_FRACTION;
-        } else {
-          // Пакет повреждён или неполон: синхронизируемся по следующему коду.
-          receiveState = (b == TEMPERATURE_WHOLE_CODE)
-              ? WAIT_TEMPERATURE_WHOLE
-              : WAIT_CODE;
-        }
-        break;
-      case WAIT_TEMPERATURE_FRACTION:
-        temperature = temperatureFromBytes(receivedWholeByte, b);
-        Serial.println(temperature);
-        receiveState = WAIT_CODE;
-        link.sendByte(OK_CODE);
-        updateFanSpeed();
-        break;
-      case WAIT_ETALON:
-        etalon_temperature = (float)(int8_t)b;
-        receiveState = WAIT_CODE;
-        updateFanSpeed();
-        break;
-    }
-  }
-
-  updateAndPrintFanRpm();
+  control.begin(millis());
+  loadStableConfig();
 }
 
 void loop() {
-  if (DEBUG) {
-    testFanAvailability();
-  } else {
-    doUsefulWork();
+  static uint8_t command = 0, expected = 0, received = 0;
+  static uint8_t payload[MAX_PAYLOAD];
+  static uint32_t commandStartedMs = 0;
+  const uint32_t now = millis();
+
+  uint8_t value;
+  while (link.recvByte(&value)) {
+    if (command == 0) {
+      const uint8_t length = payloadLength(value);
+      if (length == 0xFF) link.sendByte(static_cast<uint8_t>(cooling::INVALID_ARGUMENT));
+      else if (length == 0) processCommand(value, payload, now);
+      else {
+        command = value;
+        expected = length;
+        received = 0;
+        commandStartedMs = now;
+      }
+    } else {
+      payload[received++] = value;
+      if (received == expected) {
+        processCommand(command, payload, now);
+        command = 0;
+      }
+    }
   }
+  if (command != 0 && now - commandStartedMs >= 2000UL) command = 0;
+
+  static uint32_t lastControlMs = 0;
+  if (now - lastControlMs >= 1000UL) {
+    lastControlMs = now;
+    uint16_t rpm[cooling::kFanCount];
+    for (uint8_t i = 0; i < cooling::kFanCount; ++i) rpm[i] = fans.get_rpm(i);
+    control.tick(rpm, now);
+    for (uint8_t i = 0; i < cooling::kFanCount; ++i)
+      fans.set_speed(i, control.snapshot().pwm[i]);
+  }
+  if (control.stableConfigDirty()) saveStableConfig();
 }
