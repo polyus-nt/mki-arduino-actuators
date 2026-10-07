@@ -1,5 +1,19 @@
 # Arduino Actuator
 
+## Новая прошивка аппаратного API (feature-ветка)
+
+`firmware/arduino-actuator-api.ino` и `firmware/ActuatorApi.h` реализуют шесть
+PWM/RPM и единственный административный сценарий mode=0/1/2, без PID/EEPROM
+и управления магнитными замками. Сборка: `pio run -e api_uno_stub`.
+Без согласованного board header вентиляторы НЕ подключены: операции по ним
+возвращают NOT_IMPLEMENTED. `api_uno_compile_check` компилирует реальную GPIO-ветку
+с намеренно непригодной тестовой картой; её нельзя прошивать на стенд.
+
+Конфигурация, протокол и проверки: [FIRMWARE-IMPLEMENTATION.md](../tjc-commutator/docs/FIRMWARE-IMPLEMENTATION.md).
+Локальная Austere-библиотека взята из pinned lapki-compiler; GPLv3 находится
+в `lib/AustereSerialMaster/LICENSE`. Старый скетч и разделы ниже сохранены
+как legacy, не описание нового аппаратного API.
+
 Скетч управляет группой кулеров, получает температуру и эталонную температуру по `AustereSerialMaster`, регулирует скорость кулеров и возвращает их обороты.
 
 ## Зависимости
