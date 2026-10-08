@@ -1,11 +1,40 @@
 #pragma once
-// Edit this tab in Arduino IDE after agreeing the real wiring.
-// Current Austere defaults: MISO=2, MOSI=3, CLK=4, CS=5, IRQ=7.
-// To relocate the link, define ALL five API_LINK_* constants together.
-// Six PWM pins and six tach pins must be unique, not overlap the link,
-// and support hardware PWM / PinChangeInterrupt respectively.
-// Install PinChangeInterrupt 1.2.9 in Library Manager before enabling fan pins.
-// #define API_PWM_PINS { ... six pins ... }
-// #define API_TACH_PINS { ... six pins ... }
-// #define API_PULSES_PER_REV 2
-// Until these arrays are defined, fan requests return NOT_IMPLEMENTED.
+#include <Arduino.h>
+
+// Единственное место настройки распиновки. Этот файл виден отдельной вкладкой
+// Arduino IDE. Сначала подключаем внешнюю карту сборки, затем задаём defaults:
+// test/compile_only_board.h используется только для проверки компиляции.
+#ifdef HARDWARE_API_BOARD_HEADER
+#include HARDWARE_API_BOARD_HEADER
+#endif
+
+// Транспорт Austere: при переносе определите ВСЕ пять макросов одновременно.
+// Частичная карта запрещена: иначе часть проводов незаметно осталась бы старой.
+#if defined(API_LINK_MISO) || defined(API_LINK_MOSI) || defined(API_LINK_CLK) || defined(API_LINK_CS) || defined(API_LINK_IRQ)
+#if !defined(API_LINK_MISO) || !defined(API_LINK_MOSI) || !defined(API_LINK_CLK) || !defined(API_LINK_CS) || !defined(API_LINK_IRQ)
+#error "define all five API_LINK_* pins together"
+#endif
+#else
+#define API_LINK_MISO 2
+#define API_LINK_MOSI 3
+#define API_LINK_CLK 4
+#define API_LINK_CS 5
+#define API_LINK_IRQ 7
+#endif
+
+// Реальная разводка шести вентиляторов пока НЕ согласована. Для её включения
+// задайте оба массива по шесть пинов; до этого GPIO не включаются и API
+// возвращает NOT_IMPLEMENTED. Пины должны быть уникальны во всей карте:
+// PWM — аппаратный analogWrite, таховходы — PinChangeInterrupt.
+// #define API_PWM_PINS { ... шесть пинов PWM ... }
+// #define API_TACH_PINS { ... шесть таховходов ... }
+#if defined(API_PWM_PINS) != defined(API_TACH_PINS)
+#error "both API_PWM_PINS and API_TACH_PINS must be defined"
+#endif
+
+// Число импульсов тахометра на оборот (это параметр датчика, не регулирование).
+// Перед включением вентиляторов установите PinChangeInterrupt 1.2.9.
+#ifndef API_PULSES_PER_REV
+#define API_PULSES_PER_REV 2
+#endif
+static_assert(API_PULSES_PER_REV > 0, "tach pulses/revolution must be positive");

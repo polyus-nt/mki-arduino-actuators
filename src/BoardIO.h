@@ -1,30 +1,10 @@
 #pragma once
 #include <Arduino.h>
+#include "../BoardConfig.h"
 #include "ActuatorApi.h"
 
-// Optional header defines API_PWM_PINS {p0,...,p5}, API_TACH_PINS {...},
-// API_PULSES_PER_REV (optional, default 2), and optionally API_LINK_* pins.
-// NO guessed six-fan pinout is enabled by default.
-#ifdef HARDWARE_API_BOARD_HEADER
-#include HARDWARE_API_BOARD_HEADER
-#endif
-#ifndef API_LINK_MISO
-#define API_LINK_MISO 2
-#define API_LINK_MOSI 3
-#define API_LINK_CLK 4
-#define API_LINK_CS 5
-#define API_LINK_IRQ 7
-#endif
-
-#if defined(API_PWM_PINS) != defined(API_TACH_PINS)
-#error "both API_PWM_PINS and API_TACH_PINS must be defined"
-#endif
 #if defined(API_PWM_PINS) && defined(API_TACH_PINS)
 #include <PinChangeInterrupt.h>
-#ifndef API_PULSES_PER_REV
-#define API_PULSES_PER_REV 2
-#endif
-static_assert(API_PULSES_PER_REV > 0, "tach pulses/revolution must be positive");
 class BoardIO : public hardware_api::FanHardware {
  public:
   BoardIO() : valid_(false), lastMs_(0) {

@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include "../BoardConfig.h"
 // Validate transport pins even when sensor/fan outputs are unconfigured.
 inline bool validLinkPins() {
   const int pins[5] = {API_LINK_MISO, API_LINK_MOSI, API_LINK_CLK, API_LINK_CS, API_LINK_IRQ};
