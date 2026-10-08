@@ -18,7 +18,7 @@ struct Hardware : FanHardware {
   uint8_t randomPwm() override { return samples[draws++ % 8]; }
 };
 static Frame request(uint8_t command, uint8_t idx, uint8_t value = 0) {
-  Frame frame = {}; frame.version = 1; frame.kind = 1; frame.tx_id = 42;
+  Frame frame = {}; frame.version = hardware_api::kVersion; frame.kind = 1; frame.tx_id = 42;
   frame.node = 14; frame.command = command; frame.idx = idx; frame.data[0] = value;
   return frame;
 }
@@ -26,7 +26,7 @@ static Frame checked(ActuatorApi& api, const Frame& frame, uint32_t now = 0) {
   Frame reply = api.handle(frame, now);
   assert(sameRequest(frame, reply));
   if (reply.status) assert(zeros(reply.data, 8));
-  uint8_t bytes[20]; encode(reply, bytes); Frame decoded;
+  uint8_t bytes[hardware_api::kFrameSize]; encode(reply, bytes); Frame decoded;
   assert(decode(bytes, decoded)); assert(sameRequest(frame, decoded));
   return reply;
 }
@@ -68,7 +68,7 @@ int main() {
   assert(checked(api, invalid).status == INVALID_ARGUMENT);
   invalid = request(kSetPwm, 0, 100); invalid.node = 13;
   assert(checked(api, invalid).status == INVALID_NODE);
-  invalid = request(kSetPwm, 0, 100); invalid.version = 2;
+  invalid = request(kSetPwm, 0, 100); invalid.version = 1;
   assert(checked(api, invalid).status == UNSUPPORTED_VERSION);
   assert(checked(api, request(kGetMode, 0)).status == INVALID_INDEX);
   assert(checked(api, request(kSetDoorLock, 0, 1)).status == UNKNOWN_COMMAND);

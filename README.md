@@ -37,7 +37,7 @@ mode=2 случайно заменяет только поступающие е�
 
 - `src/ActuatorApi.h` — обработчики команд и сценарии.
 - `src/BoardIO.h` — GPIO, тахометры, проверка карты.
-- `src/common/HardwareProtocol.h` — бинарный кадр 20 байтов с CRC.
+- `src/common/HardwareProtocol.h` — бинарный кадр 28 байтов с CRC.
 - `src/austere/` — локальная AustereSerialMaster с лицензией upstream.
 - `src/main.cpp` — только адаптер PlatformIO; Arduino IDE собирает корневой .ino.
 
