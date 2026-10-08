@@ -1,6 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
-#include "../firmware/ActuatorApi.h"
+#include "../src/ActuatorApi.h"
 using namespace hardware_api;
 
 struct Hardware : FanHardware {
