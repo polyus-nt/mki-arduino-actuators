@@ -1,6 +1,9 @@
 #include <assert.h>
 #include <stdio.h>
-#include "../src/ActuatorApi.h"
+#ifndef ACTUATOR_API_HEADER
+#define ACTUATOR_API_HEADER "../arduino-actuator-1/src/ActuatorApi.h"
+#endif
+#include ACTUATOR_API_HEADER
 using namespace hardware_api;
 
 struct Hardware : FanHardware {

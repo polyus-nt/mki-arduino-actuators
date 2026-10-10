@@ -1,6 +1,9 @@
 #include <assert.h>
 #include <stdio.h>
-#include "../src/BoardIO.h"
+#ifndef ACTUATOR_BOARD_IO_HEADER
+#define ACTUATOR_BOARD_IO_HEADER "../arduino-actuator-1/src/BoardIO.h"
+#endif
+#include ACTUATOR_BOARD_IO_HEADER
 GpioEvent events[256];
 unsigned eventCount = 0;
 uint32_t fakeMillis = 0;
