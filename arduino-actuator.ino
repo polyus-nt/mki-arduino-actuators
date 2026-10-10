@@ -5,7 +5,7 @@
 #include "src/LinkPins.h"
 
 BoardIO board;
-hardware_api::ActuatorApi api(board);
+hardware_api::ActuatorApi api(board, API_LOCAL_NODE, API_FAN_COUNT);
 AustereSerialMaster link(API_LINK_MISO, API_LINK_MOSI, API_LINK_CLK, API_LINK_CS, API_LINK_IRQ);
 hardware_api::StreamParser parser;
 hardware_api::ReplyBuffer replies;

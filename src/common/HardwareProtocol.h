@@ -9,7 +9,7 @@
 namespace hardware_api {
 enum {
   kFrameSize = 28, kVersion = 2, kRequest = 1, kResponse = 2,
-  kSensorsNode = 13, kActuatorNode = 14, kFanCount = 6,
+  kSensorsNode = 13, kActuatorNode = 14, kActuatorSecondNode = 17, kFanCount = 6,
   kGetTemp = 0x20, kGetVoc = 0x21, kGetDoor = 0x22,
   kGetPressure = 0x23, kGetHumidity = 0x24, kGetDust = 0x25,
   kGetPwm = 0x30, kGetRpm = 0x31, kSetPwm = 0x32,
@@ -98,7 +98,8 @@ inline bool zeros(const uint8_t* data, size_t length) {
   return true;
 }
 // Pure semantic validation. Door locks are NOT owned by either Arduino.
-inline Status validateRequest(const Frame& request, uint8_t localNode) {
+inline Status validateRequest(const Frame& request, uint8_t localNode,
+                              uint8_t localFanCount = kFanCount) {
   if (request.version != kVersion) return UNSUPPORTED_VERSION;
   if (request.kind != kRequest || request.status != OK) return INVALID_ARGUMENT;
   uint8_t node = 0, count = 0;
@@ -109,13 +110,18 @@ inline Status validateRequest(const Frame& request, uint8_t localNode) {
     case kGetVoc: case kGetDoor: case kGetDust:
       node = kSensorsNode; count = 2; break;
     case kGetPwm: case kGetRpm:
-      node = kActuatorNode; count = kFanCount; break;
+      node = localNode; count = localFanCount; break;
     case kSetPwm: case kSetMode:
-      node = kActuatorNode; count = kFanCount; argument = true; break;
+      node = localNode; count = localFanCount; argument = true; break;
     case kGetMode:
-      node = kActuatorNode; modeRead = true; break;
+      node = localNode; modeRead = true; break;
     default: return UNKNOWN_COMMAND;
   }
+  if ((request.command == kGetPwm || request.command == kGetRpm ||
+       request.command == kSetPwm || request.command == kSetMode ||
+       request.command == kGetMode) &&
+      localNode != kActuatorNode && localNode != kActuatorSecondNode)
+    return INVALID_NODE;
   if (request.node != node || localNode != node) return INVALID_NODE;
   if (modeRead ? request.idx != 0xff : request.idx >= count) return INVALID_INDEX;
   if (!zeros(request.data + (argument ? 1 : 0), argument ? 7 : 8))

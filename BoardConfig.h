@@ -22,14 +22,40 @@
 #define API_LINK_IRQ 7
 #endif
 
-// Реальная разводка шести вентиляторов пока НЕ согласована. Для её включения
-// задайте оба массива по шесть пинов; до этого GPIO не включаются и API
-// возвращает NOT_IMPLEMENTED. Пины должны быть уникальны во всей карте:
-// PWM — аппаратный analogWrite, таховходы — PinChangeInterrupt.
-// #define API_PWM_PINS { ... шесть пинов PWM ... }
-// #define API_TACH_PINS { ... шесть таховходов ... }
-#if defined(API_PWM_PINS) != defined(API_TACH_PINS)
-#error "both API_PWM_PINS and API_TACH_PINS must be defined"
+// Arduino IDE: выберите 1 (четыре вентилятора) или 2 (два вентилятора).
+// Один скетч обслуживает обе платы; после изменения обязательно перепрошить
+// именно выбранную Arduino. Внешние индексы 4/5 преобразуются хабом в 0/1.
+#ifndef API_ACTUATOR_BOARD
+#define API_ACTUATOR_BOARD 1
+#endif
+#if API_ACTUATOR_BOARD == 1
+#define API_LOCAL_NODE 14
+#define API_FAN_COUNT 4
+#define API_GLOBAL_FAN_OFFSET 0
+#ifndef API_PWM_PINS
+#define API_PWM_PINS {10, 11, 6, 9}
+#endif
+#ifndef API_TACH_PINS
+#define API_TACH_PINS {12, 13, A4, 8}
+#endif
+#ifndef API_RELAY_PINS
+#define API_RELAY_PINS {A0, A1, A2, A3}
+#endif
+#elif API_ACTUATOR_BOARD == 2
+#define API_LOCAL_NODE 17
+#define API_FAN_COUNT 2
+#define API_GLOBAL_FAN_OFFSET 4
+#ifndef API_PWM_PINS
+#define API_PWM_PINS {10, 11}
+#endif
+#ifndef API_TACH_PINS
+#define API_TACH_PINS {12, 13}
+#endif
+#ifndef API_RELAY_PINS
+#define API_RELAY_PINS {A0, A1}
+#endif
+#else
+#error "API_ACTUATOR_BOARD must be 1 or 2"
 #endif
 
 // Число импульсов тахометра на оборот (это параметр датчика, не регулирование).
@@ -38,3 +64,13 @@
 #define API_PULSES_PER_REV 2
 #endif
 static_assert(API_PULSES_PER_REV > 0, "tach pulses/revolution must be positive");
+
+// Неполная карта — ошибка сборки, а не чтение за границами массива.
+namespace actuator_config {
+constexpr uint8_t pwmPins[] = API_PWM_PINS;
+constexpr uint8_t tachPins[] = API_TACH_PINS;
+constexpr uint8_t relayPins[] = API_RELAY_PINS;
+static_assert(sizeof(pwmPins) == API_FAN_COUNT, "wrong PWM pin count");
+static_assert(sizeof(tachPins) == API_FAN_COUNT, "wrong tach pin count");
+static_assert(sizeof(relayPins) == API_FAN_COUNT, "wrong relay pin count");
+}

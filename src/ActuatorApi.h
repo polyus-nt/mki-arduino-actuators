@@ -12,20 +12,23 @@ class FanHardware {
   virtual uint8_t randomPwm() = 0;
 };
 
-// Низкоуровневый API шести вентиляторов (idx=0..5), без PID, EEPROM,
+// Низкоуровневый API одной Arduino: node14 — idx=0..3, node17 — idx=0..1.
+// Внешний API имеет шесть каналов, но на проводе индексы локальные. Без PID, EEPROM,
 // температурных решений, замков и watchdog связи. Потеря связи не меняет PWM.
 // User/Admin — права интерфейса на компьютере: прошивка не аутентифицирует
 // отправителя кадра. get_mode/set_mode НЕ должны экспортироваться в MCP.
 class ActuatorApi {
  public:
-  explicit ActuatorApi(FanHardware& hardware)
-      : hardware_(hardware), mode_(0), idx_(0xff), lastTickMs_(0) {}
+  explicit ActuatorApi(FanHardware& hardware, uint8_t node = kActuatorNode,
+                       uint8_t fanCount = kFanCount)
+      : hardware_(hardware), node_(node), fanCount_(fanCount),
+        mode_(0), idx_(0xff), lastTickMs_(0) {}
   bool begin(uint32_t now) {
     // Начальное состояние после загрузки: mode=0, нет выбранного вентилятора,
     // на доступных выходах PWM=0. Это не восстановление значений из EEPROM.
     mode_ = 0; idx_ = 0xff; lastTickMs_ = now;
     bool success = true;
-    for (uint8_t i = 0; i < kFanCount; ++i)
+    for (uint8_t i = 0; i < fanCount_; ++i)
       if (hardware_.available(i) && !hardware_.writePwm(i, 0)) success = false;
     return success;
   }
@@ -44,7 +47,7 @@ class ActuatorApi {
     // выполняется ДО доступа к оборудованию. Некорректный запрос не меняет выходы.
     // Ответ сохраняет tx_id/node/command/idx запроса. Данные успешного ответа
     // нельзя интерпретировать при status != OK; CRC добавит кодек отправки.
-    const Status checked = validateRequest(request, kActuatorNode);
+    const Status checked = validateRequest(request, node_, fanCount_);
     Frame reply = response(request, checked);
     if (checked != OK) return reply;
     // GET_MODE (0x40, Admin): idx=0xFF, все байты data запроса нулевые.
@@ -53,7 +56,7 @@ class ActuatorApi {
     // Команда не меняет режим или PWM и не требует доступности GPIO каналов.
     if (request.command == kGetMode) { modeResult(reply); return reply; }
     if (request.command == kSetMode) {
-      // SET_MODE (0x41, Admin): idx=0..5, data[0]=mode, остальные data=0.
+      // SET_MODE (0x41, Admin): локальный idx, data[0]=mode, остальные data=0.
       // mode=0: выключить единственный сценарий; допустимый idx игнорируется.
       //         Последний реально применённый PWM остаётся на каждом выходе.
       // mode=1: сразу применить случайный PWM выбранному вентилятору, затем
@@ -61,7 +64,9 @@ class ActuatorApi {
       // mode=2: не менять выход при включении; подменять только новые SET_PWM
       //         выбранному вентилятору случайными значениями в диапазоне 0..255.
       // Ответ имеет тот же формат mode/idx, что и GET_MODE.
-      // Новый сценарий заменяет старый, два сломанных вентилятора невозможны.
+      // Новый сценарий заменяет старый НА ЭТОЙ ПЛАТЕ. Единственный сценарий
+      // во всей системе обеспечивается верхним API: при переносе между платами
+      // сначала подтверждается mode=0 старой платы, затем включается новая.
       // Повтор того же mode/idx ничего не перезапускает и не рандомит заново.
       const uint8_t mode = request.data[0];
       if (mode == 0) { mode_ = 0; idx_ = 0xff; modeResult(reply); return reply; }
@@ -79,16 +84,18 @@ class ActuatorApi {
     // Отсутствующая/неутверждённая карта канала: NOT_IMPLEMENTED, не ложный 0.
     if (!hardware_.available(request.idx)) return response(request, NOT_IMPLEMENTED);
     switch (request.command) {
-      // GET_PWM (0x30, User): idx=0..5, data запроса=0.
+      // GET_PWM (0x30, User): локальный idx, data запроса=0.
       // Ответ: data[0]=фактически применённый PWM (0..255), остальные data=0.
       // Это НЕ последнее запрошенное значение: запрос 100 в mode=2 мог дать 230.
       case kGetPwm: reply.data[0] = hardware_.readPwm(request.idx); break;
-      // GET_RPM (0x31, User): idx=0..5, data запроса=0.
+      // GET_RPM (0x31, User): локальный idx, data запроса=0.
       // Ответ: data[0..3]=измеренные обороты/минуту, unsigned u32 big-endian.
       // Без нормализации и подмены отдельных байтов; оставшиеся data=0.
       case kGetRpm: writeU32(reply.data, hardware_.readRpm(request.idx)); break;
       case kSetPwm: {
-        // SET_PWM (0x32, User): idx=0..5, data[0]=PWM 0..255, остальные data=0.
+        // SET_PWM (0x32, User): локальный idx, data[0]=PWM 0..255, остальные data=0.
+        // PWM=0: реле HIGH (питание выключено), analogWrite(...,0).
+        // PWM>0: реле LOW (питание включено), analogWrite(...,PWM).
         // В mode=0/1 и для незатронутых каналов записываем переданное значение.
         // Только mode=2 для активного idx заменяет его случайным физическим PWM.
         // Ошибка записи -> INTERNAL_ERROR. Успех -> data[0]=применённый PWM.
@@ -109,6 +116,7 @@ class ActuatorApi {
  private:
   void modeResult(Frame& reply) const { reply.data[0] = mode_; reply.data[1] = idx_; }
   FanHardware& hardware_;
+  uint8_t node_, fanCount_;
   uint8_t mode_, idx_;
   uint32_t lastTickMs_;
 };

@@ -3,53 +3,59 @@
 #include "../BoardConfig.h"
 #include "ActuatorApi.h"
 
-#if defined(API_PWM_PINS) && defined(API_TACH_PINS)
 #include <PinChangeInterrupt.h>
 class BoardIO : public hardware_api::FanHardware {
  public:
   BoardIO() : valid_(false), lastMs_(0) {
-    for (uint8_t i = 0; i < 6; ++i) { pulses_[i] = 0; rpm_[i] = 0; pwm_[i] = 0; }
+    for (uint8_t i = 0; i < API_FAN_COUNT; ++i) { pulses_[i] = 0; rpm_[i] = 0; pwm_[i] = 0; }
   }
   bool setup() {
     instance_ = this;
-    const uint8_t used[17] = {
-      API_LINK_MISO, API_LINK_MOSI, API_LINK_CLK, API_LINK_CS, API_LINK_IRQ,
-      pwmPins_[0], pwmPins_[1], pwmPins_[2], pwmPins_[3], pwmPins_[4], pwmPins_[5],
-      tachPins_[0], tachPins_[1], tachPins_[2], tachPins_[3], tachPins_[4], tachPins_[5]
+    uint8_t used[5 + 3 * API_FAN_COUNT] = {
+      API_LINK_MISO, API_LINK_MOSI, API_LINK_CLK, API_LINK_CS, API_LINK_IRQ
     };
-    for (uint8_t i = 0; i < 17; ++i) {
+    for (uint8_t i = 0; i < API_FAN_COUNT; ++i) {
+      used[5 + i] = pwmPins_[i];
+      used[5 + API_FAN_COUNT + i] = tachPins_[i];
+      used[5 + 2 * API_FAN_COUNT + i] = relayPins_[i];
+    }
+    for (uint8_t i = 0; i < sizeof(used); ++i) {
       if (used[i] >= NUM_DIGITAL_PINS) return false;
       for (uint8_t j = 0; j < i; ++j) if (used[i] == used[j]) return false;
     }
-    for (uint8_t i = 0; i < 6; ++i)
+    for (uint8_t i = 0; i < API_FAN_COUNT; ++i)
       if (!digitalPinHasPWM(pwmPins_[i]) || digitalPinToPCINT(tachPins_[i]) == NOT_AN_INTERRUPT)
         return false;
-    for (uint8_t i = 0; i < 6; ++i) {
-      pinMode(pwmPins_[i], OUTPUT); analogWrite(pwmPins_[i], 0);
+    for (uint8_t i = 0; i < API_FAN_COUNT; ++i) {
+      // Предзагрузка HIGH до OUTPUT исключает импульс включения реле LOW.
+      digitalWrite(relayPins_[i], HIGH); pinMode(relayPins_[i], OUTPUT);
+      digitalWrite(pwmPins_[i], LOW); pinMode(pwmPins_[i], OUTPUT);
+      analogWrite(pwmPins_[i], 0);
       pinMode(tachPins_[i], INPUT_PULLUP);
     }
     void (*handlers[6])() = {pulse0, pulse1, pulse2, pulse3, pulse4, pulse5};
-    for (uint8_t i = 0; i < 6; ++i)
+    for (uint8_t i = 0; i < API_FAN_COUNT; ++i)
       attachPCINT(digitalPinToPCINT(tachPins_[i]), handlers[i], FALLING);
     valid_ = true; lastMs_ = millis(); return true;
   }
   void poll(uint32_t now) {
     const uint32_t elapsed = static_cast<uint32_t>(now - lastMs_);
     if (!valid_ || elapsed < 1000UL) return;
-    uint32_t snapshot[6];
+    uint32_t snapshot[API_FAN_COUNT];
     noInterrupts();
-    for (uint8_t i = 0; i < 6; ++i) { snapshot[i] = pulses_[i]; pulses_[i] = 0; }
+    for (uint8_t i = 0; i < API_FAN_COUNT; ++i) { snapshot[i] = pulses_[i]; pulses_[i] = 0; }
     interrupts();
-    for (uint8_t i = 0; i < 6; ++i) {
+    for (uint8_t i = 0; i < API_FAN_COUNT; ++i) {
       const uint64_t value = static_cast<uint64_t>(snapshot[i]) * 60000ULL /
                             (static_cast<uint64_t>(API_PULSES_PER_REV) * elapsed);
       rpm_[i] = value > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(value);
     }
     lastMs_ = now;
   }
-  bool available(uint8_t idx) const override { return valid_ && idx < 6; }
+  bool available(uint8_t idx) const override { return valid_ && idx < API_FAN_COUNT; }
   bool writePwm(uint8_t idx, uint8_t pwm) override {
     if (!available(idx)) return false;
+    digitalWrite(relayPins_[idx], pwm == 0 ? HIGH : LOW);
     analogWrite(pwmPins_[idx], pwm); pwm_[idx] = pwm; return true;
   }
   uint8_t readPwm(uint8_t idx) const override { return available(idx) ? pwm_[idx] : 0; }
@@ -61,25 +67,13 @@ class BoardIO : public hardware_api::FanHardware {
   static void pulse2() { pulse(2); } static void pulse3() { pulse(3); }
   static void pulse4() { pulse(4); } static void pulse5() { pulse(5); }
   static BoardIO* instance_;
-  static const uint8_t pwmPins_[6], tachPins_[6];
+  static const uint8_t pwmPins_[], tachPins_[], relayPins_[];
   bool valid_;
-  volatile uint32_t pulses_[6];
-  uint32_t rpm_[6], lastMs_;
-  uint8_t pwm_[6];
+  volatile uint32_t pulses_[API_FAN_COUNT];
+  uint32_t rpm_[API_FAN_COUNT], lastMs_;
+  uint8_t pwm_[API_FAN_COUNT];
 };
 BoardIO* BoardIO::instance_ = nullptr;
-const uint8_t BoardIO::pwmPins_[6] = API_PWM_PINS;
-const uint8_t BoardIO::tachPins_[6] = API_TACH_PINS;
-#else
-// Explicitly unconfigured target: never claims that a physical PWM was applied.
-class BoardIO : public hardware_api::FanHardware {
- public:
-  bool setup() { return false; }
-  void poll(uint32_t) {}
-  bool available(uint8_t) const override { return false; }
-  bool writePwm(uint8_t, uint8_t) override { return false; }
-  uint8_t readPwm(uint8_t) const override { return 0; }
-  uint32_t readRpm(uint8_t) const override { return 0; }
-  uint8_t randomPwm() override { return static_cast<uint8_t>(random(256)); }
-};
-#endif
+const uint8_t BoardIO::pwmPins_[] = API_PWM_PINS;
+const uint8_t BoardIO::tachPins_[] = API_TACH_PINS;
+const uint8_t BoardIO::relayPins_[] = API_RELAY_PINS;
