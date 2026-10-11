@@ -11,9 +11,9 @@ enum {
   kFrameSize = 28, kVersion = 2, kRequest = 1, kResponse = 2,
   kSensorsNode = 13, kActuatorNode = 14, kActuatorSecondNode = 17, kFanCount = 6,
   kGetTemp = 0x20, kGetVoc = 0x21, kGetDoor = 0x22,
-  kGetPressure = 0x23, kGetHumidity = 0x24, kGetDust = 0x25,
+  kGetPressure = 0x23, kGetHumidity = 0x24, kGetDust = 0x25, kGetOpenButtons = 0x27,
   kGetPwm = 0x30, kGetRpm = 0x31, kSetPwm = 0x32,
-  kGetMode = 0x40, kSetMode = 0x41, kSetDoorLock = 0x42
+  kGetMode = 0x40, kSetMode = 0x41, kSetDoorLock = 0x42, kOpenDoorTimed = 0x44
 };
 enum Status {
   OK = 0, INVALID_INDEX = 1, INVALID_ARGUMENT = 2, UNKNOWN_COMMAND = 3,
@@ -117,6 +117,10 @@ inline Status validateRequest(const Frame& request, uint8_t localNode,
       node = localNode; count = localFanCount; argument = true; break;
     case kGetMode:
       node = localNode; modeRead = true; break;
+    case kGetOpenButtons:
+      node = 15; count = 1; break;
+    case kOpenDoorTimed:
+      node = 16; count = 2; break;
     default: return UNKNOWN_COMMAND;
   }
   if ((request.command == kGetPwm || request.command == kGetRpm ||
@@ -137,6 +141,7 @@ class StreamParser {
  public:
   StreamParser() : size_(0), firstMs_(0), lastMs_(0) {}
   void reset() { size_ = 0; }
+  bool partial() const { return size_ != 0; }
   void tick(uint32_t now) {
     if (size_ && (static_cast<uint32_t>(now - lastMs_) >= 250UL ||
                   static_cast<uint32_t>(now - firstMs_) >= 1000UL)) reset();
