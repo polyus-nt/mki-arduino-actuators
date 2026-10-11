@@ -11,7 +11,7 @@
 #define API_LINK_MOSI 3
 #define API_LINK_CLK 4
 #define API_LINK_CS 5
-#define API_LINK_IRQ 7
+#define API_LINK_IRQ 6
 #define API_PWM_PINS {10, 11}
 #define API_TACH_PINS {8, 12}
 #define API_RELAY_PINS {A0, A1}

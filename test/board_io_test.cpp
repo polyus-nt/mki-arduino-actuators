@@ -20,6 +20,8 @@ int main() {
 #endif
 #if API_FAN_COUNT == 2 && !defined(HARDWARE_API_BOARD_HEADER)
   // Общая карта двухвентиляторных UNO; порядок каналов также важен.
+  assert(API_LINK_MISO == 2 && API_LINK_MOSI == 3 && API_LINK_CLK == 4);
+  assert(API_LINK_CS == 5 && API_LINK_IRQ == 6);
   assert(actuator_config::pwmPins[0] == 10 && actuator_config::pwmPins[1] == 11);
   assert(actuator_config::tachPins[0] == 8 && actuator_config::tachPins[1] == 12);
   assert(actuator_config::relayPins[0] == A0 && actuator_config::relayPins[1] == A1);

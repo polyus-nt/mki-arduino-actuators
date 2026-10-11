@@ -21,7 +21,7 @@
 #define API_LINK_MOSI 3
 #define API_LINK_CLK 4
 #define API_LINK_CS 5
-#define API_LINK_IRQ 7
+#define API_LINK_IRQ 6
 #endif
 
 // Фиксированная конфигурация отдельного проекта arduino-actuator-2.
