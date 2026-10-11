@@ -60,7 +60,6 @@ class BoardIO : public hardware_api::FanHardware {
   }
   uint8_t readPwm(uint8_t idx) const override { return available(idx) ? pwm_[idx] : 0; }
   uint32_t readRpm(uint8_t idx) const override { return available(idx) ? rpm_[idx] : 0; }
-  uint8_t randomPwm() override { return static_cast<uint8_t>(random(256)); }
  private:
   static void pulse(uint8_t idx) { if (instance_) ++instance_->pulses_[idx]; }
   static void pulse0() { pulse(0); } static void pulse1() { pulse(1); }

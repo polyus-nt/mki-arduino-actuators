@@ -1,3 +1,4 @@
+#include <initializer_list>
 #include <assert.h>
 #include <stdio.h>
 #ifndef ACTUATOR_BOARD_IO_HEADER
@@ -65,16 +66,14 @@ int main() {
   assert(api.handle(frame,0).data[0] == 255);
   frame.idx=API_FAN_COUNT;
   assert(api.handle(frame,0).status == hardware_api::INVALID_INDEX);
-  frame.idx=API_FAN_COUNT-1; frame.command=hardware_api::kSetMode;
-  frame.data[0]=1;
-  assert(api.handle(frame,0).data[1] == API_FAN_COUNT-1);
-  assert(board.readPwm(frame.idx) == 230);
-  assert(api.tick(30000) && board.readPwm(frame.idx) == 230);
-  frame.command=hardware_api::kGetMode; frame.idx=0xff; frame.data[0]=0;
-  assert(api.handle(frame,30000).data[0] == 1);
-  frame.command=hardware_api::kSetMode; frame.idx=0; frame.data[0]=0;
-  assert(api.handle(frame,30000).data[1] == 0xff);
-  assert(board.readPwm(API_FAN_COUNT-1) == 230); // Возврат mode0 не меняет PWM.
+  const unsigned beforeUnknown = eventCount;
+  for (uint8_t command : {0x40, 0x41}) {
+    frame.command=command; frame.idx=0; frame.data[0]=1;
+    assert(api.handle(frame,0).status == hardware_api::UNKNOWN_COMMAND);
+  }
+  assert(eventCount == beforeUnknown);
+  assert(board.readPwm(API_FAN_COUNT-1) == 255);
+  frame.command=hardware_api::kGetPwm; frame.data[0]=0;
   frame.idx=0; frame.node=API_LOCAL_NODE == 14 ? 17 : 14;
   assert(api.handle(frame,0).status == hardware_api::INVALID_NODE);
   puts("actuator: board pins, safe relays, PWM, RPM and local routing passed");

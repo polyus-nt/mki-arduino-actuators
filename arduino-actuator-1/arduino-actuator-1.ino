@@ -11,6 +11,10 @@ hardware_api::StreamParser parser;
 hardware_api::ReplyBuffer replies;
 uint16_t lastOverruns = 0;
 bool linkReady = false;
+#ifdef TEST
+#include "src/ActuatorTestInput.h"
+ActuatorTestInput serialInput;
+#endif
 
 void setup() {
   Serial.begin(9600);
@@ -19,11 +23,27 @@ void setup() {
   if (!api.begin(millis())) Serial.println(F("initial PWM write failed"));
   randomSeed(micros());
   linkReady = link.setup();
+#ifdef TEST
+  Serial.println(F("TEST: pwm idx | rpm idx | set_pwm idx 0..255 | help"));
+  Serial.print(F("Local indices: 0..")); Serial.println(API_FAN_COUNT-1);
+#endif
 }
 
 void loop() {
   if (!linkReady) return;
   board.poll(millis());
+#ifdef TEST
+  // Не смешиваем USB и Austere. Одна текстовая команда использует тот же API.
+  if (Serial.available()>0) {
+    hardware_api::Frame request;
+    const ActuatorTestInput::Event event=serialInput.feed(
+        static_cast<char>(Serial.read()), millis(), API_LOCAL_NODE, API_FAN_COUNT, request);
+    if (event==ActuatorTestInput::REQUEST) printActuatorReply(Serial, api.handle(request,millis()));
+    else if (event==ActuatorTestInput::HELP)
+      Serial.println(F("pwm idx | rpm idx | set_pwm idx 0..255; LOCAL indices, not global"));
+    else if (event==ActuatorTestInput::ERROR) Serial.println(F("Invalid command/index/PWM"));
+  }
+#endif
   if (!api.tick(millis())) Serial.println(F("fault PWM write failed"));
   parser.tick(millis());
   if (link.overrunCount() != lastOverruns) {

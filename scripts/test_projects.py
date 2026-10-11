@@ -42,6 +42,8 @@ def main():
 
         for board in (1, 2):
             folder = f"arduino-actuator-{board}"
+            check(f"console-{board}", "console_test.cpp",
+                  [f'-DACTUATOR_TEST_HEADER="../{folder}/src/ActuatorTestInput.h"'])
             check(f"api-{board}", "hardware_api_test.cpp",
                   [f'-DACTUATOR_API_HEADER="../{folder}/src/ActuatorApi.h"'])
             check(f"gpio-{board}", "board_io_test.cpp",

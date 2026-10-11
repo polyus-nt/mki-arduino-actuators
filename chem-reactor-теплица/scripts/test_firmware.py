@@ -16,6 +16,11 @@ def main():
                         "-I", str(root / "tests/actuator-stubs"),
                         str(root / "tests/actuator_board_test.cpp"), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
+        subprocess.run([args.cxx, "-std=c++11", "-Wall", "-Wextra",
+                        "-I", str(root / "tests/actuator-stubs"),
+                        '-DACTUATOR_TEST_HEADER="../arduino-actuator/src/ActuatorTestInput.h"',
+                        str(root / "tests/console_test.cpp"), "-o", str(binary)], check=True)
+        subprocess.run([str(binary)], check=True)
 
 
 if __name__ == "__main__":
