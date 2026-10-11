@@ -34,7 +34,8 @@
 #define API_PWM_PINS {10, 11}
 #endif
 #ifndef API_TACH_PINS
-#define API_TACH_PINS {12, 13}
+// Та же аппаратная карта, что у двухвентиляторной Arduino химреактора.
+#define API_TACH_PINS {8, 12}
 #endif
 #ifndef API_RELAY_PINS
 #define API_RELAY_PINS {A0, A1}
