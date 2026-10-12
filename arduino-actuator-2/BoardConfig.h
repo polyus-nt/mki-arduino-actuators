@@ -49,7 +49,11 @@
 static_assert(API_PULSES_PER_REV > 0, "tach pulses/revolution must be positive");
 
 // Неполная карта — ошибка сборки, а не чтение за границами массива.
+// Полярность реле питания: первая Arduino ФабЛаб LOW, остальные HIGH.
+#define API_RELAY_ACTIVE_LOW 0
 namespace actuator_config {
+constexpr uint8_t relayOnLevel = API_RELAY_ACTIVE_LOW ? LOW : HIGH;
+constexpr uint8_t relayOffLevel = API_RELAY_ACTIVE_LOW ? HIGH : LOW;
 constexpr uint8_t pwmPins[] = API_PWM_PINS;
 constexpr uint8_t tachPins[] = API_TACH_PINS;
 constexpr uint8_t relayPins[] = API_RELAY_PINS;

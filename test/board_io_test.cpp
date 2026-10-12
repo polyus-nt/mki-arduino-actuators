@@ -26,13 +26,16 @@ int main() {
   assert(actuator_config::tachPins[0] == 8 && actuator_config::tachPins[1] == 12);
   assert(actuator_config::relayPins[0] == A0 && actuator_config::relayPins[1] == A1);
 #endif
+  assert(API_RELAY_ACTIVE_LOW == (API_FAN_COUNT == 4 ? 1 : 0));
+  assert(actuator_config::relayOnLevel == (API_FAN_COUNT == 4 ? LOW : HIGH));
+  assert(actuator_config::relayOffLevel == (API_FAN_COUNT == 4 ? HIGH : LOW));
   assert(board.setup());
   assert(eventCount == 6 * API_FAN_COUNT);
   for (uint8_t i = 0; i < API_FAN_COUNT; ++i) {
     const unsigned base = 6 * i;
     assert(events[base].action == 'D');
     assert(events[base].pin == actuator_config::relayPins[i]);
-    assert(events[base].value == LOW);
+    assert(events[base].value == actuator_config::relayOffLevel);
     assert(events[base+1].action == 'M' && events[base+1].value == OUTPUT);
     assert(events[base+2].action == 'D' && events[base+2].value == LOW);
     assert(events[base+4].action == 'A' && events[base+4].value == 0);
@@ -40,16 +43,16 @@ int main() {
     assert(interruptHandlers[actuator_config::tachPins[i]]);
   }
   eventCount = 0;
-  // Любой ненулевой PWM, включая крайние 1 и 255, включает HIGH-активное реле.
+  // Любой ненулевой PWM включает реле в полярности конкретной платы.
   assert(board.writePwm(0, 1));
-  assert(events[0].value == HIGH && events[1].value == 1);
+  assert(events[0].value == actuator_config::relayOnLevel && events[1].value == 1);
   assert(board.writePwm(0, 255));
-  assert(events[2].value == HIGH && events[3].value == 255);
+  assert(events[2].value == actuator_config::relayOnLevel && events[3].value == 255);
   eventCount = 0;
   for (uint8_t i = 0; i < API_FAN_COUNT; ++i) {
     assert(board.writePwm(i, 100));
     assert(events[2*i].pin == actuator_config::relayPins[i]);
-    assert(events[2*i].value == HIGH && events[2*i+1].value == 100);
+    assert(events[2*i].value == actuator_config::relayOnLevel && events[2*i+1].value == 100);
     assert(board.readPwm(i) == 100);
     for (unsigned pulse=0; pulse<4u*(i+1); ++pulse)
       interruptHandlers[actuator_config::tachPins[i]]();
@@ -66,7 +69,7 @@ int main() {
   assert(board.readRpm(0) == 0);
   eventCount = 0;
   assert(board.writePwm(0, 0));
-  assert(events[0].value == LOW && events[1].value == 0);
+  assert(events[0].value == actuator_config::relayOffLevel && events[1].value == 0);
   assert(!board.available(API_FAN_COUNT));
   assert(!board.writePwm(API_FAN_COUNT, 1));
   assert(eventCount == 2);

@@ -41,7 +41,7 @@ class ActuatorApi {
       // unsigned u32 big-endian в data[0..3], остальные байты нулевые.
       case kGetRpm: writeU32(reply.data, hardware_.readRpm(request.idx)); break;
       // SET_PWM (0x32): idx=0..1, data[0]=PWM 0..255, остальные data=0.
-      // PWM=0: реле LOW, питание выключено. PWM>0: реле HIGH, питание включено.
+      // PWM=0 выключает реле, PWM>0 включает; уровни заданы в BoardConfig.h (HIGH-активное).
       // Переданное значение применяется без подмены и удерживается до новой
       // команды или перезапуска платы. Ошибка записи: INTERNAL_ERROR.
       // Успешный ответ содержит применённый PWM в data[0], остальные байты=0.

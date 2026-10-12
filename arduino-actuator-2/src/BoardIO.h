@@ -27,8 +27,8 @@ class BoardIO : public hardware_api::FanHardware {
       if (!digitalPinHasPWM(pwmPins_[i]) || digitalPinToPCINT(tachPins_[i]) == NOT_AN_INTERRUPT)
         return false;
     for (uint8_t i = 0; i < API_FAN_COUNT; ++i) {
-      // Предзагрузка LOW до OUTPUT исключает импульс включения HIGH-активного реле.
-      digitalWrite(relayPins_[i], LOW); pinMode(relayPins_[i], OUTPUT);
+      // Предзагрузка выключенного уровня до OUTPUT; полярность задана в BoardConfig.h.
+      digitalWrite(relayPins_[i], actuator_config::relayOffLevel); pinMode(relayPins_[i], OUTPUT);
       digitalWrite(pwmPins_[i], LOW); pinMode(pwmPins_[i], OUTPUT);
       analogWrite(pwmPins_[i], 0);
       pinMode(tachPins_[i], INPUT_PULLUP);
@@ -55,7 +55,7 @@ class BoardIO : public hardware_api::FanHardware {
   bool available(uint8_t idx) const override { return valid_ && idx < API_FAN_COUNT; }
   bool writePwm(uint8_t idx, uint8_t pwm) override {
     if (!available(idx)) return false;
-    digitalWrite(relayPins_[idx], pwm == 0 ? LOW : HIGH);
+    digitalWrite(relayPins_[idx], pwm == 0 ? actuator_config::relayOffLevel : actuator_config::relayOnLevel);
     analogWrite(pwmPins_[idx], pwm); pwm_[idx] = pwm; return true;
   }
   uint8_t readPwm(uint8_t idx) const override { return available(idx) ? pwm_[idx] : 0; }
