@@ -3,7 +3,7 @@
 // Раскомментировать для ручных команд USB Serial (9600 бод).
 // #define TEST
 // Химреактор: самостоятельная UNO, два вентилятора с индексами 0/1.
-// Вся распиновка только здесь. Реле active HIGH; тахометр — два импульса/оборот.
+// Вся распиновка только здесь. Реле active LOW; тахометр — два импульса/оборот.
 #define API_LOCAL_NODE 14
 #define API_FAN_COUNT 2
 #define API_GLOBAL_FAN_OFFSET 0
@@ -17,8 +17,8 @@
 #define API_RELAY_PINS {A0, A1}
 #define API_PULSES_PER_REV 2
 static_assert(API_PULSES_PER_REV > 0, "tach pulses/revolution must be positive");
-// Полярность реле питания: первая Arduino ФабЛаб LOW, остальные HIGH.
-#define API_RELAY_ACTIVE_LOW 0
+// Химреактор: оба реле A0/A1 LOW-активные; HIGH выключает питание.
+#define API_RELAY_ACTIVE_LOW 1
 namespace actuator_config {
 constexpr uint8_t relayOnLevel = API_RELAY_ACTIVE_LOW ? LOW : HIGH;
 constexpr uint8_t relayOffLevel = API_RELAY_ACTIVE_LOW ? HIGH : LOW;
