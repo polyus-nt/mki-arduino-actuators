@@ -94,8 +94,8 @@ class ActuatorApi {
       case kGetRpm: writeU32(reply.data, hardware_.readRpm(request.idx)); break;
       case kSetPwm: {
         // SET_PWM (0x32, User): локальный idx, data[0]=PWM 0..255, остальные data=0.
-        // PWM=0: реле HIGH (питание выключено), analogWrite(...,0).
-        // PWM>0: реле LOW (питание включено), analogWrite(...,PWM).
+        // PWM=0: реле LOW (питание выключено), analogWrite(...,0).
+        // PWM>0: реле HIGH (питание включено), analogWrite(...,PWM).
         // В mode=0/1 и для незатронутых каналов записываем переданное значение.
         // Только mode=2 для активного idx заменяет его случайным физическим PWM.
         // Ошибка записи -> INTERNAL_ERROR. Успех -> data[0]=применённый PWM.
